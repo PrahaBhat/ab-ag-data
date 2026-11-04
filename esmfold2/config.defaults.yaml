@@ -1,0 +1,33 @@
+# Copy to config.local.yaml and edit; config.local.yaml is gitignored.
+
+csv_path: ../abag_foldable_constructs_v3.csv
+
+model_id: biohub/ESMFold2-hf
+# Lighter / faster variant (optional): biohub/ESMFold2-Fast
+
+fold_mode: complex
+# complex     — all present Ab chains + antigen as one ESMFold2 multimer
+# antibody    — heavy/light/scFv-domain chains only (no antigen)
+# antigen     — antigen chain only
+
+max_total_length: 2000
+min_chain_length: 8
+max_chain_length: null
+
+allow_unk_x: true
+reject_if_construct_type_mismatch: true
+
+num_diffusion_samples: 8
+seed: 42
+
+# Reduce samples automatically when total length exceeds these thresholds.
+diffusion_samples_by_length:
+  - max_total: 500
+    samples: 8
+  - max_total: 1024
+    samples: 6
+  - max_total: 2000
+    samples: 4
+
+output_dir: ./outputs
+manifest_dir: ./manifests

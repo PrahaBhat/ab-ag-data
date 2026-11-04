@@ -1,1 +1,9 @@
 abag_foldable_constructs_v3.zip
+
+# ESMFold2 local install (keep scripts in git)
+esmfold2/.venv/
+esmfold2/cache/
+esmfold2/outputs/
+esmfold2/manifests/
+esmfold2/logs/
+esmfold2/config.local.yaml

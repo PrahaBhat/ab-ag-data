@@ -1,0 +1,8 @@
+# Pin transformers once your Vista install is verified; ESMFold2 needs a recent release.
+transformers>=4.52.0
+accelerate>=1.4.0
+kernels>=0.9.0
+pyyaml>=6.0
+tqdm>=4.66.0
+
+# PyTorch: installed by setup.sh (CPU default, or CUDA wheel when INSTALL_CUDA_TORCH=1).
