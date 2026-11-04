@@ -7,3 +7,5 @@ esmfold2/outputs/
 esmfold2/manifests/
 esmfold2/logs/
 esmfold2/config.local.yaml
+__pycache__/
+*.pyc
