@@ -5,14 +5,55 @@ set -euo pipefail
 ESMFOLD2_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ESMFOLD2_ROOT"
 
-PYTHON="${PYTHON:-python3}"
+ARCH="$(uname -m)"
 VENV_DIR="${VENV_DIR:-$ESMFOLD2_ROOT/.venv}"
 CACHE_DIR="${CACHE_DIR:-$ESMFOLD2_ROOT/cache}"
 INSTALL_CUDA_TORCH="${INSTALL_CUDA_TORCH:-1}"
 PREFETCH_WEIGHTS="${PREFETCH_WEIGHTS:-0}"
-TORCH_CUDA_INDEX="${TORCH_CUDA_INDEX:-https://download.pytorch.org/whl/cu124}"
+RECREATE_VENV="${RECREATE_VENV:-0}"
 
+# --- Platform defaults (override with env vars) ---
+if [[ "$ARCH" == "aarch64" ]]; then
+  # Vista Grace-Hopper: x86 cu124 index has no ARM wheels; use CUDA 12.6 index + pinned torch.
+  TORCH_CUDA_INDEX="${TORCH_CUDA_INDEX:-https://download.pytorch.org/whl/cu126}"
+  TORCH_SPEC="${TORCH_SPEC:-torch==2.6.0}"
+  echo "==> Detected aarch64 (Vista/ARM): using ${TORCH_SPEC} from ${TORCH_CUDA_INDEX}"
+else
+  TORCH_CUDA_INDEX="${TORCH_CUDA_INDEX:-https://download.pytorch.org/whl/cu124}"
+  TORCH_SPEC="${TORCH_SPEC:-torch}"
+fi
+
+pick_python() {
+  if [[ -n "${PYTHON:-}" ]]; then
+    echo "$PYTHON"
+    return
+  fi
+  # PyTorch+ESMFold2: avoid 3.13 on ARM if possible (few CUDA wheels).
+  local c ver major minor
+  for c in python3.12 python3.11 python3; do
+    if command -v "$c" >/dev/null 2>&1; then
+      ver="$("$c" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+      major="${ver%%.*}"
+      minor="${ver#*.}"
+      if [[ "$ARCH" == "aarch64" && "$major" -eq 3 && "$minor" -ge 13 ]]; then
+        echo "==> Warning: $c is Python $ver (aarch64 CUDA wheels often missing for 3.13+)" >&2
+        continue
+      fi
+      echo "$c"
+      return
+    fi
+  done
+  echo "python3"
+}
+
+PYTHON="$(pick_python)"
 echo "==> ESMFold2 root: $ESMFOLD2_ROOT"
+echo "==> Using interpreter: $PYTHON ($("$PYTHON" --version 2>&1))"
+
+if [[ "$RECREATE_VENV" == "1" && -d "$VENV_DIR" ]]; then
+  echo "==> Removing existing venv ($RECREATE_VENV=1)"
+  rm -rf "$VENV_DIR"
+fi
 
 mkdir -p \
   "$CACHE_DIR/huggingface" \
@@ -33,8 +74,21 @@ source "$VENV_DIR/bin/activate"
 python -m pip install --upgrade pip wheel setuptools
 
 if [[ "$INSTALL_CUDA_TORCH" == "1" ]]; then
-  echo "==> Installing PyTorch (CUDA wheel from $TORCH_CUDA_INDEX)"
-  pip install torch --index-url "$TORCH_CUDA_INDEX"
+  echo "==> Installing PyTorch: ${TORCH_SPEC} (index ${TORCH_CUDA_INDEX})"
+  if ! pip install ${TORCH_SPEC} --index-url "$TORCH_CUDA_INDEX"; then
+    cat >&2 <<EOF
+
+ERROR: PyTorch install failed for arch=$ARCH python=$(python -V).
+
+Vista (aarch64) fixes that usually work:
+  1) Load CUDA module:    module load cuda/12.5
+  2) Use Python 3.12:     conda create -n esmfold2 python=3.12 -y && conda activate esmfold2
+  3) Recreate venv:       RECREATE_VENV=1 PYTHON=python bash esmfold2/setup.sh
+  4) Or try newer torch:  TORCH_SPEC=torch TORCH_CUDA_INDEX=https://download.pytorch.org/whl/cu128
+
+EOF
+    exit 1
+  fi
 else
   echo "==> Installing PyTorch (CPU)"
   pip install torch
@@ -57,6 +111,9 @@ export PIP_CACHE_DIR="$CACHE_DIR/pip"
 
 export ESMFOLD2_MODEL_ID="\${ESMFOLD2_MODEL_ID:-biohub/ESMFold2-hf}"
 export PYTHONPATH="\$ESMFOLD2_ROOT:\${PYTHONPATH:-}"
+
+# Vista: load before folding on GPU nodes if not in job script
+# module load cuda/12.5
 EOF
 
 chmod +x "$ESMFOLD2_ROOT/bin/"*.py 2>/dev/null || true
@@ -71,12 +128,18 @@ source "$ENV_FILE"
 
 python - <<'PY'
 import importlib.util
-print("python:", __import__("sys").executable)
+import platform
+import sys
+print("python:", sys.executable, sys.version)
+print("machine:", platform.machine())
 for pkg in ("torch", "transformers"):
     spec = importlib.util.find_spec(pkg)
     print(pkg, "OK" if spec else "MISSING")
 import torch
+print("torch:", torch.__version__)
 print("torch cuda available:", torch.cuda.is_available())
+if torch.cuda.is_available():
+    print("device:", torch.cuda.get_device_name(0))
 PY
 
 if [[ "$PREFETCH_WEIGHTS" == "1" ]]; then

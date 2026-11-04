@@ -7,7 +7,12 @@ Self-contained install under `esmfold2/` (venv + Hugging Face cache + outputs). 
 ```bash
 cd /scratch/11104/pbhat125/ab-ag-data   # your clone path
 
-bash esmfold2/setup.sh
+module load cuda/12.5
+# Python 3.13 on Vista often has no ARM CUDA torch wheels — use 3.12:
+# conda create -n esmfold2 python=3.12 -y && conda activate esmfold2
+
+deactivate 2>/dev/null || true
+RECREATE_VENV=1 bash esmfold2/setup.sh
 source esmfold2/env.sh
 
 # Optional: download ~13GB weights before batch jobs
@@ -91,4 +96,6 @@ python esmfold2/bin/fold_csv.py --dry-run --limit 100
 
 - ESMFold2 predicts **structures from sequence**; low **ipTM** on Ab–Ag multimers is common.
 - This pipeline does **not** replace dedicated Ab–Ag docking tools; it standardizes folding from your CSV with length and construct checks.
-- If `setup.sh` picks the wrong CUDA wheel, set `TORCH_CUDA_INDEX` or `INSTALL_CUDA_TORCH=0` and install PyTorch manually, then re-run setup.
+- **Vista aarch64:** defaults to `TORCH_SPEC=torch==2.6.0` and `TORCH_CUDA_INDEX=https://download.pytorch.org/whl/cu126`. Override with env vars if needed.
+- If setup used **Python 3.13**, remove the venv and rerun with 3.12: `RECREATE_VENV=1 PYTHON=python3.12 bash esmfold2/setup.sh` (after `conda create -n esmfold2 python=3.12`).
+- If `setup.sh` picks the wrong CUDA wheel, set `TORCH_CUDA_INDEX` / `TORCH_SPEC` or `INSTALL_CUDA_TORCH=0` and install PyTorch manually, then re-run setup.
